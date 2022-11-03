@@ -1,19 +1,28 @@
 package com.alviano.ugd89_kelas_d_10801
 
 import android.annotation.SuppressLint
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.graphics.Color
 import android.hardware.*
-import androidx.appcompat.app.AppCompatActivity
+import android.media.RingtoneManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
-import android.view.SurfaceHolder
-import android.view.SurfaceView
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
-import java.io.IOException
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import kotlin.math.sqrt
+
 
 class MainActivity : AppCompatActivity() {
     private var mCamera: Camera? = null
@@ -22,6 +31,14 @@ class MainActivity : AppCompatActivity() {
     lateinit var proximitySensor: Sensor
     lateinit var sensorManager: SensorManager
     private var currentCameraId = Camera.CameraInfo.CAMERA_FACING_BACK
+    private var acceleration = 0f
+    private var currentAcceleration = 0f
+    private var lastAcceleration = 0f
+    private var countShake = 0
+    private val CHANNEL_ID_1 = "channel_notification_01"
+    private val CHANNEL_ID_2 = "channel_notification_02"
+    private val notificationId1 = 101
+    private val notificationId2 = 102
 
     var proximitySensorEventListener: SensorEventListener? = object : SensorEventListener {
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
@@ -32,8 +49,6 @@ class MainActivity : AppCompatActivity() {
             if(event.sensor.type == Sensor.TYPE_PROXIMITY){
                 if(event.values[0] == 0f){
                     rotateCamera()
-                }else{
-                    sensorStatusTV.text="<<<Away>>>"
                 }
             }
         }
@@ -63,6 +78,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        createNotificationChannel()
         try{
             mCamera = Camera.open()
         } catch (e: Exception){
@@ -93,5 +109,89 @@ class MainActivity : AppCompatActivity() {
         @SuppressLint("MissingInflatedID", "LocalSuppress") val imageClose =
             findViewById<View>(R.id.imgClose) as ImageButton
         imageClose.setOnClickListener { view: View? -> System.exit(0)}
+    }
+
+    private val sensorListener: SensorEventListener = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent) {
+
+            // Fetching x,y,z values
+            val x = event.values[0]
+            val y = event.values[1]
+            val z = event.values[2]
+            lastAcceleration = currentAcceleration
+
+            // Getting current accelerations
+            // with the help of fetched x,y,z values
+            currentAcceleration = sqrt((x * x + y * y + z * z).toDouble()).toFloat()
+            val delta: Float = currentAcceleration - lastAcceleration
+            acceleration = acceleration * 0.9f + delta
+
+            // Display a Toast message if
+            // acceleration value is over 12
+            if (acceleration > 12 && countShake == 0) {
+                countShake = countShake + 1
+                sendNotification1()
+                Toast.makeText(applicationContext, "Shake event detected", Toast.LENGTH_SHORT).show()
+            }
+        }
+        override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
+    }
+
+    override fun onResume() {
+        sensorManager?.registerListener(sensorListener, sensorManager!!.getDefaultSensor(
+            Sensor .TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_NORMAL
+        )
+        super.onResume()
+    }
+
+    override fun onPause() {
+        sensorManager!!.unregisterListener(sensorListener)
+        super.onPause()
+    }
+
+    private fun sendNotification1() {
+        val intent : Intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        val pendingIntent: PendingIntent = PendingIntent.getActivity(this,0,intent,PendingIntent.FLAG_IMMUTABLE)
+
+        val broadcastIntent : Intent = Intent(this, NotificationReceiver::class.java)
+
+        val defaultSoundUri: Uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+
+        val actionIntent = PendingIntent.getBroadcast(this,0,broadcastIntent,PendingIntent.FLAG_IMMUTABLE)
+
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID_1)
+            .setSmallIcon(R.drawable.ic_baseline_camera_alt_24)
+            .setContentTitle("Modul89_B_10801_PROJECT 2")
+            .setContentText("Selamat anda sudah berhasil mengerjakan Modul 8 dan 9 ")
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setColor(Color.BLUE)
+            .setAutoCancel(true)
+            .setSound(defaultSoundUri)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(pendingIntent)
+            .addAction(R.mipmap.ic_launcher,"Toast",actionIntent)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+
+        with(NotificationManagerCompat.from(this)){
+            notify(notificationId1, builder.build())
+        }
+    }
+
+    private fun createNotificationChannel() {
+        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O){
+            val name = "Notification Title"
+            val descriptionText = "Notification Description"
+
+            val channel1 = NotificationChannel(CHANNEL_ID_1, name, NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = descriptionText
+            }
+
+
+            val notificationManager: NotificationManager =
+                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel1)
+        }
     }
 }
